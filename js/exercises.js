@@ -159,6 +159,247 @@
     ctx.restore();
   }
 
+  /* ---------- Optokinetic patterns ---------- */
+
+  const OKN_COLORS = {
+    high: ['#141414', '#f2f2f2'],
+    low: ['#7a7a7a', '#a3a3a3'],
+  };
+  const OKN_WIDTH = { narrow: 0.04, medium: 0.07, wide: 0.11 };
+  const OKN_ANGLE = {
+    right: 0, 'down-right': Math.PI / 4, down: Math.PI / 2, 'down-left': (3 * Math.PI) / 4,
+    left: Math.PI, 'up-left': (-3 * Math.PI) / 4, up: -Math.PI / 2, 'up-right': -Math.PI / 4,
+  };
+  const OKN_LINEAR = ['stripes', 'checker', 'dots'];
+  const OKN_PATTERN_LABEL = {
+    stripes: 'stripes', checker: 'checkerboard', dots: 'dot field', rotate: 'roll', flow: 'optic flow',
+  };
+  const OKN_MOTION_LABEL = { constant: 'steady', alternate: 'reversing', oscillate: 'back and forth' };
+  const OKN_PHOTOSENSITIVITY = 'Photosensitivity warning: moving high-contrast patterns can trigger seizures in people with photosensitive epilepsy. They can also cause strong dizziness or nausea. Do not use this exercise if you have photosensitive epilepsy. Have someone near you if you do it standing.';
+  const OKN_CONFIRM = 'Optokinetic patterns can strongly provoke dizziness or nausea and may trigger seizures in people with photosensitive epilepsy.\n\nDo not continue if you have photosensitive epilepsy. Sit down with support before you start.\n\nContinue?';
+
+  const mod = (a, n) => ((a % n) + n) % n;
+
+  // Distance travelled after t seconds at unit speed for each motion style.
+  // 'alternate' reverses sharply every period; 'oscillate' eases back and forth.
+  function travel(t, motion, period) {
+    if (motion === 'alternate') return period - Math.abs(mod(t, 2 * period) - period);
+    if (motion === 'oscillate') return (period / Math.PI) * (1 - Math.cos((Math.PI * t) / period));
+    return t;
+  }
+
+  // Keys get a prefix (e.g. 'bg' -> 'bgPattern') when the pattern is the
+  // background for another task, so they don't clash with its settings.
+  const prefixed = (prefix, name) => (prefix ? prefix + name[0].toUpperCase() + name.slice(1) : name);
+
+  // `when` (optional) hides all of these settings unless it returns true.
+  function oknSettings(prefix, labelPrefix, when) {
+    const k = (name) => prefixed(prefix, name);
+    const L = (label) => (labelPrefix ? `${labelPrefix} ${label.toLowerCase()}` : label);
+    const list = [
+      {
+        key: k('pattern'), label: L('Pattern'), type: 'select', default: 'stripes',
+        options: [
+          ['stripes', 'Stripes'],
+          ['checker', 'Checkerboard'],
+          ['dots', 'Dot field'],
+          ['rotate', 'Rotating dots (roll)'],
+          ['flow', 'Optic flow (moving forward / back)'],
+        ],
+      },
+      {
+        key: k('direction'), label: L('Direction'), type: 'select', default: 'left',
+        options: [
+          ['left', 'Left ←'], ['right', 'Right →'], ['up', 'Up ↑'], ['down', 'Down ↓'],
+          ['up-left', 'Up-left ↖'], ['up-right', 'Up-right ↗'], ['down-left', 'Down-left ↙'], ['down-right', 'Down-right ↘'],
+        ],
+        showIf: (s) => OKN_LINEAR.includes(s[k('pattern')]),
+      },
+      {
+        key: k('rotation'), label: L('Rotation'), type: 'select', default: 'cw',
+        options: [['cw', 'Clockwise ↻'], ['ccw', 'Counter-clockwise ↺']],
+        showIf: (s) => s[k('pattern')] === 'rotate',
+      },
+      {
+        key: k('flow'), label: L('Direction'), type: 'select', default: 'forward',
+        options: [['forward', 'Forward (expanding)'], ['backward', 'Backward (contracting)']],
+        showIf: (s) => s[k('pattern')] === 'flow',
+      },
+      {
+        key: k('motion'), label: L('Motion'), type: 'select', default: 'constant',
+        options: [['constant', 'Steady, one direction'], ['alternate', 'Reverse every few seconds'], ['oscillate', 'Smooth back and forth']],
+      },
+      {
+        key: k('period'), label: L('Time before reversing'), type: 'range', min: 2, max: 20, step: 1, unit: 's', default: 6,
+        showIf: (s) => s[k('motion')] !== 'constant',
+      },
+      { key: k('speed'), label: L('Speed'), type: 'range', min: 1, max: 10, step: 1, unit: '', default: 3 },
+      {
+        key: k('width'), label: L('Stripe / dot size'), type: 'select', default: 'medium',
+        options: [['narrow', 'Small'], ['medium', 'Medium'], ['wide', 'Large']],
+      },
+      {
+        key: k('contrast'), label: L('Contrast'), type: 'select', default: 'low',
+        options: [['low', 'Low (gentler)'], ['high', 'High']],
+      },
+    ];
+    if (!when) return list;
+    return list.map((item) => ({ ...item, showIf: (s) => when(s) && (!item.showIf || item.showIf(s)) }));
+  }
+
+  function oknConfig(s, prefix) {
+    const c = {};
+    for (const name of ['pattern', 'direction', 'rotation', 'flow', 'motion', 'period', 'speed', 'width', 'contrast']) {
+      c[name] = s[prefixed(prefix, name)];
+    }
+    return c;
+  }
+
+  function oknSummary(c) {
+    const dir = c.pattern === 'rotate' ? c.rotation : c.pattern === 'flow' ? c.flow : c.direction;
+    return `${OKN_PATTERN_LABEL[c.pattern]} · ${dir} · ${OKN_MOTION_LABEL[c.motion]} · speed ${c.speed} · ${c.contrast} contrast`;
+  }
+
+  function createOknBackground(c) {
+    const dots = Array.from({ length: 260 }, () => ({
+      x: Math.random(),
+      y: Math.random(),
+      z: Math.random(),
+      a: Math.random() * Math.PI * 2,
+      rr: Math.sqrt(Math.random()),
+      r: 0.6 + Math.random() * 0.8,
+    }));
+    const [c1, c2] = OKN_COLORS[c.contrast];
+    const dist = (t) => travel(t, c.motion, c.period) * c.speed;
+
+    // Stripes, checkerboard and dots: draw in a frame rotated to the motion
+    // direction, so motion is always along +x there.
+    function drawLinear(ctx, w, h, t, m) {
+      const R = Math.hypot(w, h) / 2 + 2;
+      const d = dist(t) * m * 0.06;
+      const sw = m * OKN_WIDTH[c.width];
+      ctx.save();
+      ctx.translate(w / 2, h / 2);
+      ctx.rotate(OKN_ANGLE[c.direction]);
+      if (c.pattern === 'stripes') {
+        const period = sw * 2;
+        const off = mod(d, period);
+        for (let x = -R - period + off; x < R; x += period) ctx.fillRect(x, -R, sw, 2 * R);
+      } else if (c.pattern === 'checker') {
+        const off = mod(d, sw * 2);
+        const n = Math.ceil(R / sw) + 2;
+        for (let i = -n; i < n; i++) {
+          for (let j = -n; j < n; j++) {
+            if (mod(i + j, 2) === 0) ctx.fillRect(i * sw + off, j * sw, sw, sw);
+          }
+        }
+      } else {
+        const L = 2 * R;
+        const base = m * OKN_WIDTH[c.width] * 0.3;
+        for (const p of dots) {
+          ctx.beginPath();
+          ctx.arc(mod(p.x * L + d, L) - R, p.y * L - R, base * p.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
+
+    function drawRotate(ctx, w, h, t, m) {
+      const turn = dist(t) * 0.06 * (c.rotation === 'ccw' ? -1 : 1);
+      const R = Math.hypot(w, h) / 2;
+      const base = m * OKN_WIDTH[c.width] * 0.45;
+      for (const p of dots) {
+        const ang = p.a + turn;
+        const rad = p.rr * R;
+        ctx.beginPath();
+        ctx.arc(w / 2 + Math.cos(ang) * rad, h / 2 + Math.sin(ang) * rad, base * p.r * (0.25 + p.rr), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Optic flow: dots in 3D space projected towards the centre. Bringing the
+    // dots nearer makes the field expand, as when walking forward.
+    function drawFlow(ctx, w, h, t, m) {
+      const NEAR = 0.08;
+      const f = m * 0.5;
+      const dz = dist(t) * 0.05 * (c.flow === 'backward' ? -1 : 1);
+      const base = m * OKN_WIDTH[c.width] * 0.14;
+      for (const p of dots) {
+        const z = NEAR + (1 - NEAR) * mod(p.z - dz, 1);
+        const x = w / 2 + ((p.x * 4 - 2) * f) / z;
+        const y = h / 2 + ((p.y * 4 - 2) * f) / z;
+        const r = Math.min((base * p.r) / z, base * 14);
+        if (x < -r || x > w + r || y < -r || y > h + r) continue;
+        // Fade dots in and out at both ends of the depth range so they don't pop.
+        ctx.globalAlpha = Math.max(0, Math.min(1, (z - NEAR) / 0.15, (1 - z) / 0.15));
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    return {
+      draw(ctx, w, h, t) {
+        const m = Math.min(w, h);
+        ctx.fillStyle = c1;
+        ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = c2;
+        if (c.pattern === 'rotate') drawRotate(ctx, w, h, t, m);
+        else if (c.pattern === 'flow') drawFlow(ctx, w, h, t, m);
+        else drawLinear(ctx, w, h, t, m);
+      },
+    };
+  }
+
+  function drawFixation(ctx, w, h) {
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#dc2626';
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, 8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  /* ---------- Backgrounds for target exercises ---------- */
+
+  const BACKGROUND_SETTINGS = [
+    {
+      key: 'background', label: 'Background', type: 'select', default: 'plain',
+      options: [['plain', 'Plain'], ['busy', 'Busy pattern (harder)'], ['okn', 'Moving pattern (optokinetic, hardest)']],
+    },
+    ...oknSettings('bg', 'Background', (s) => s.background === 'okn'),
+  ];
+  const BACKGROUND_TIP = 'The “Moving pattern” background adds optokinetic stimulation and is the hardest option. Photosensitivity warning: do not use it if you have photosensitive epilepsy.';
+  const backgroundSummary = (s) => (s.background === 'okn'
+    ? `moving ${OKN_PATTERN_LABEL[s.bgPattern]} background`
+    : `${s.background} background`);
+  const backgroundConfirm = (s) => (s.background === 'okn' ? OKN_CONFIRM : '');
+
+  // Draws the chosen background, and targets on top of it. On a moving
+  // pattern each target sits on a solid disc so it stays readable.
+  function createBackdrop(s) {
+    const okn = s.background === 'okn' ? createOknBackground(oknConfig(s, 'bg')) : null;
+    return {
+      draw(ctx, w, h, t) {
+        if (okn) okn.draw(ctx, w, h, t);
+        else drawBackground(ctx, w, h, s.background);
+      },
+      target(ctx, x, y, r, kind, letter) {
+        if (okn) {
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
+          ctx.beginPath();
+          ctx.arc(x, y, r * 1.35, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        drawTarget(ctx, x, y, r, kind, letter);
+      },
+    };
+  }
+
   /* ---------- Shared settings ---------- */
 
   const S = {
@@ -182,10 +423,6 @@
     size: {
       key: 'size', label: 'Target size', type: 'select', default: 'medium',
       options: [['small', 'Small (harder)'], ['medium', 'Medium'], ['large', 'Large (easier)']],
-    },
-    background: {
-      key: 'background', label: 'Background', type: 'select', default: 'plain',
-      options: [['plain', 'Plain'], ['busy', 'Busy pattern (harder)']],
     },
     pacer: { key: 'pacer', label: 'Show head pacing guide', type: 'toggle', default: true },
   };
@@ -213,13 +450,16 @@
       'A common starting dose is 1–2 minutes, several times a day. Follow your clinician’s plan.',
       'Mild, short-lived dizziness is expected. It should settle within about 15–30 minutes.',
       'When a plain background is easy, try the busy pattern, a smaller target, or standing.',
+      BACKGROUND_TIP,
       PROGRESSION,
     ],
     caution: 'If you have neck pain or a neck condition, keep the head movements small and gentle and check with your clinician.',
-    settings: [S.axis, S.bpm(80), S.duration(60), S.target, S.size, S.background, S.pacer],
-    summarize: (s) => `${AXIS_LABEL[s.axis]} · ${s.bpm} bpm · ${s.background}`,
+    confirm: backgroundConfirm,
+    settings: [S.axis, S.bpm(80), S.duration(60), S.target, S.size, ...BACKGROUND_SETTINGS, S.pacer],
+    summarize: (s) => `${AXIS_LABEL[s.axis]} · ${s.bpm} bpm · ${backgroundSummary(s)}`,
     cue: (s) => (s.axis === 'horizontal' ? 'Eyes on the target · turn head side to side' : 'Eyes on the target · nod head up and down'),
     create(s, api) {
+      const bg = createBackdrop(s);
       let letter = randLetter();
       let lastBeat = 0;
       let lastSwap = 0;
@@ -237,9 +477,9 @@
           }
         },
         draw(ctx, w, h, t) {
-          drawBackground(ctx, w, h, s.background);
+          bg.draw(ctx, w, h, t);
           const r = Math.min(w, h) * SIZE[s.size];
-          drawTarget(ctx, w / 2, h / 2, r, s.target, letter);
+          bg.target(ctx, w / 2, h / 2, r, s.target, letter);
           if (s.pacer) drawPacer(ctx, w, h, -Math.cos((Math.PI * t * s.bpm) / 60), s.axis, 'Head');
         },
       };
@@ -262,20 +502,23 @@
       'Be comfortable with VOR ×1 before you start VOR ×2.',
       'Start with a small distance and a slow tempo (about 50–70 bpm).',
       'Short sets of 30–60 seconds are fine at first.',
+      BACKGROUND_TIP,
       PROGRESSION,
     ],
     caution: 'This exercise often causes more symptoms than VOR ×1. Stop and rest if dizziness becomes more than mild.',
+    confirm: backgroundConfirm,
     settings: [
       S.axis, S.bpm(60), S.duration(60),
       {
         key: 'amplitude', label: 'Target travel distance', type: 'select', default: 'small',
         options: [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']],
       },
-      S.target, S.size, S.background, S.pacer,
+      S.target, S.size, ...BACKGROUND_SETTINGS, S.pacer,
     ],
-    summarize: (s) => `${AXIS_LABEL[s.axis]} · ${s.bpm} bpm · ${s.amplitude} travel`,
+    summarize: (s) => `${AXIS_LABEL[s.axis]} · ${s.bpm} bpm · ${s.amplitude} travel · ${backgroundSummary(s)}`,
     cue: () => 'Head moves opposite to the target',
     create(s, api) {
+      const bg = createBackdrop(s);
       let letter = randLetter();
       let lastBeat = 0;
       let lastSwap = 0;
@@ -293,7 +536,7 @@
           }
         },
         draw(ctx, w, h, t) {
-          drawBackground(ctx, w, h, s.background);
+          bg.draw(ctx, w, h, t);
           const r = Math.min(w, h) * SIZE[s.size];
           const lim = extent(w, h, r);
           const horiz = s.axis === 'horizontal';
@@ -318,7 +561,7 @@
 
           const x = horiz ? w / 2 + p * amp : w / 2;
           const y = horiz ? h / 2 : h / 2 + p * amp;
-          drawTarget(ctx, x, y, r, s.target, letter);
+          bg.target(ctx, x, y, r, s.target, letter);
           if (s.pacer) drawPacer(ctx, w, h, head, s.axis, 'Head');
         },
       };
@@ -332,6 +575,100 @@
     diagonal2: [[-1, 1], [1, -1]],
   };
   const SPREAD = { near: 0.4, medium: 0.6, far: 0.85 };
+
+  const SACCADE_SETTINGS = {
+    pattern: {
+      key: 'pattern', label: 'Target pattern', type: 'select', default: 'horizontal',
+      options: [
+        ['horizontal', 'Horizontal (left ↔ right)'],
+        ['vertical', 'Vertical (up ↕ down)'],
+        ['diagonal', 'Diagonal ↘'],
+        ['diagonal2', 'Diagonal ↗'],
+        ['random', 'Random positions (hardest)'],
+      ],
+    },
+    interval: (def) => ({
+      key: 'interval', label: 'Time between jumps', type: 'range',
+      min: 0.5, max: 3, step: 0.25, unit: 's', default: def,
+    }),
+    distance: {
+      key: 'distance', label: 'Distance between targets', type: 'select', default: 'medium',
+      options: [['near', 'Near'], ['medium', 'Medium'], ['far', 'Far']],
+    },
+  };
+
+  // A highlighted letter that jumps between positions. The 'card' style puts
+  // each target on a solid disc so it stays readable over a moving background.
+  function createSaccadeTask(s, api, style) {
+    let idx = 0;
+    let letter = randLetter();
+    let point = [-0.5, 0];
+    let last = 0;
+    let count = 0;
+
+    function next() {
+      if (s.pattern === 'random') {
+        let p;
+        do { p = [Math.random() * 2 - 1, Math.random() * 2 - 1]; }
+        while (Math.hypot(p[0] - point[0], p[1] - point[1]) < 0.8);
+        point = p;
+      } else {
+        idx = 1 - idx;
+      }
+      letter = randLetter(letter);
+      count += 1;
+      api.beep(760, 0.04);
+      api.setStat(`${count} saccades`);
+    }
+
+    function drawSpot(ctx, x, y, r, active) {
+      if (style === 'card') {
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
+        ctx.strokeStyle = active ? COLORS.accent : 'rgba(28, 40, 48, 0.4)';
+        ctx.lineWidth = active ? 4 : 2;
+        ctx.beginPath();
+        ctx.arc(x, y, active ? r * 1.35 : r * 0.45, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+        if (active) drawTarget(ctx, x, y, r, 'letter', letter, COLORS.accent);
+      } else if (active) {
+        drawTarget(ctx, x, y, r, 'letter', letter, COLORS.accent);
+      } else {
+        ctx.fillStyle = COLORS.faint;
+        ctx.beginPath();
+        ctx.arc(x, y, r * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    return {
+      update(t) {
+        if (t - last >= s.interval) {
+          last = t;
+          next();
+        }
+      },
+      draw(ctx, w, h) {
+        const r = Math.min(w, h) * SIZE[s.size];
+        const lim = extent(w, h, r);
+        const sx = Math.min((w * SPREAD[s.distance]) / 2, lim.x);
+        const sy = Math.min((h * SPREAD[s.distance]) / 2, lim.y);
+        const map = (p) => [w / 2 + p[0] * sx, h / 2 + p[1] * sy];
+
+        if (s.pattern === 'random') {
+          const [x, y] = map(point);
+          drawSpot(ctx, x, y, r, true);
+          return;
+        }
+        SACCADE_POINTS[s.pattern].forEach((p, i) => {
+          const [x, y] = map(p);
+          drawSpot(ctx, x, y, r, i === idx);
+        });
+      },
+    };
+  }
 
   const saccades = {
     id: 'saccades',
@@ -349,27 +686,13 @@
       'To make it harder, increase the distance, shorten the interval, or use the random pattern.',
       'Horizontal is usually easiest, then vertical, then diagonal.',
       'If you overshoot or undershoot the target a lot, use a longer interval.',
+      'When this is easy, try Saccades + optokinetic, which adds a moving background.',
     ],
     caution: 'Rest if you feel eye strain or a headache.',
     settings: [
-      {
-        key: 'pattern', label: 'Pattern', type: 'select', default: 'horizontal',
-        options: [
-          ['horizontal', 'Horizontal (left ↔ right)'],
-          ['vertical', 'Vertical (up ↕ down)'],
-          ['diagonal', 'Diagonal ↘'],
-          ['diagonal2', 'Diagonal ↗'],
-          ['random', 'Random positions (hardest)'],
-        ],
-      },
-      {
-        key: 'interval', label: 'Time between jumps', type: 'range',
-        min: 0.5, max: 3, step: 0.25, unit: 's', default: 1.5,
-      },
-      {
-        key: 'distance', label: 'Distance between targets', type: 'select', default: 'medium',
-        options: [['near', 'Near'], ['medium', 'Medium'], ['far', 'Far']],
-      },
+      SACCADE_SETTINGS.pattern,
+      SACCADE_SETTINGS.interval(1.5),
+      SACCADE_SETTINGS.distance,
       {
         key: 'mode', label: 'Mode', type: 'select', default: 'eyes',
         options: [['eyes', 'Eyes only (head still)'], ['eyesHead', 'Eyes, then head']],
@@ -380,59 +703,12 @@
     summarize: (s) => `${s.pattern} · every ${s.interval}s · ${s.mode === 'eyes' ? 'eyes only' : 'eyes then head'}`,
     cue: (s) => (s.mode === 'eyes' ? 'Keep head still · jump eyes to the orange letter' : 'Eyes first, then turn head to the target'),
     create(s, api) {
-      let idx = 0;
-      let letter = randLetter();
-      let point = [-0.5, 0];
-      let last = 0;
-      let count = 0;
-
-      function next() {
-        if (s.pattern === 'random') {
-          let p;
-          do { p = [Math.random() * 2 - 1, Math.random() * 2 - 1]; }
-          while (Math.hypot(p[0] - point[0], p[1] - point[1]) < 0.8);
-          point = p;
-        } else {
-          idx = 1 - idx;
-        }
-        letter = randLetter(letter);
-        count += 1;
-        api.beep(760, 0.04);
-        api.setStat(`${count} saccades`);
-      }
-
+      const task = createSaccadeTask(s, api, 'plain');
       return {
-        update(t) {
-          if (t - last >= s.interval) {
-            last = t;
-            next();
-          }
-        },
+        update: (t) => task.update(t),
         draw(ctx, w, h) {
           drawBackground(ctx, w, h, 'plain');
-          const r = Math.min(w, h) * SIZE[s.size];
-          const lim = extent(w, h, r);
-          const sx = Math.min((w * SPREAD[s.distance]) / 2, lim.x);
-          const sy = Math.min((h * SPREAD[s.distance]) / 2, lim.y);
-          const map = (p) => [w / 2 + p[0] * sx, h / 2 + p[1] * sy];
-
-          if (s.pattern === 'random') {
-            const [x, y] = map(point);
-            drawTarget(ctx, x, y, r, 'letter', letter, COLORS.accent);
-            return;
-          }
-          const pts = SACCADE_POINTS[s.pattern];
-          pts.forEach((p, i) => {
-            const [x, y] = map(p);
-            if (i === idx) {
-              drawTarget(ctx, x, y, r, 'letter', letter, COLORS.accent);
-            } else {
-              ctx.fillStyle = COLORS.faint;
-              ctx.beginPath();
-              ctx.arc(x, y, r * 0.35, 0, Math.PI * 2);
-              ctx.fill();
-            }
-          });
+          task.draw(ctx, w, h);
         },
       };
     },
@@ -454,8 +730,11 @@
       'Start slowly, at 0.2–0.3 cycles per second.',
       'A typical order is horizontal → vertical → diagonal → circle / figure-8 → random.',
       'Do this exercise standing only when it is easy while you sit.',
+      'Following a target over a moving background is harder still. Try it when plain pursuit is easy.',
+      BACKGROUND_TIP,
     ],
     caution: 'Stop and rest if you feel nauseous or the dizziness builds up.',
+    confirm: backgroundConfirm,
     settings: [
       {
         key: 'pattern', label: 'Path', type: 'select', default: 'horizontal',
@@ -481,11 +760,12 @@
         key: 'mode', label: 'Mode', type: 'select', default: 'eyes',
         options: [['eyes', 'Eyes only (head still)'], ['vorc', 'Head and eyes together']],
       },
-      S.target, S.size, S.duration(60),
+      S.target, S.size, ...BACKGROUND_SETTINGS, S.duration(60),
     ],
-    summarize: (s) => `${s.pattern} · ${s.speed} Hz · ${s.mode === 'eyes' ? 'eyes only' : 'head + eyes'}`,
+    summarize: (s) => `${s.pattern} · ${s.speed} Hz · ${s.mode === 'eyes' ? 'eyes only' : 'head + eyes'} · ${backgroundSummary(s)}`,
     cue: (s) => (s.mode === 'eyes' ? 'Keep head still · follow with your eyes' : 'Move head and eyes together with the target'),
     create(s, api) {
+      const bg = createBackdrop(s);
       let letter = randLetter();
       let lastSwap = 0;
       let lastCycle = 0;
@@ -518,13 +798,13 @@
           }
         },
         draw(ctx, w, h, t) {
-          drawBackground(ctx, w, h, 'plain');
+          bg.draw(ctx, w, h, t);
           const r = Math.min(w, h) * SIZE[s.size];
           const lim = extent(w, h, r);
           const ax = Math.min(w * AMPLITUDE[s.amplitude], lim.x);
           const ay = Math.min(h * AMPLITUDE[s.amplitude], lim.y);
           const [px, py] = position(t);
-          drawTarget(ctx, w / 2 + px * ax, h / 2 + py * ay, r, s.target, letter);
+          bg.target(ctx, w / 2 + px * ax, h / 2 + py * ay, r, s.target, letter);
         },
       };
     },
@@ -692,12 +972,6 @@
     },
   };
 
-  const OKN_COLORS = {
-    high: ['#141414', '#f2f2f2'],
-    low: ['#7a7a7a', '#a3a3a3'],
-  };
-  const OKN_WIDTH = { narrow: 0.04, medium: 0.07, wide: 0.11 };
-
   const okn = {
     id: 'okn',
     tag: 'Visual motion',
@@ -713,25 +987,132 @@
     tips: [
       'A small, short increase in symptoms is expected. Rest until they settle before the next set.',
       'Low contrast is gentler. Use it first if high contrast is too strong.',
-      'Change direction between sets (left, right, up, down, rotation).',
+      'Change the pattern and direction between sets. Stripes and checkerboards in each direction, roll and optic flow each give a different kind of visual motion.',
+      'Optic flow (forward / back) is like walking along a corridor or a busy street. Roll rotation often causes the most symptoms, so start it slowly.',
+      'Motion that reverses or moves back and forth is harder to get used to than steady motion. Use it after steady motion is comfortable.',
     ],
-    caution: 'Photosensitivity warning: moving high-contrast patterns can trigger seizures in people with photosensitive epilepsy. They can also cause strong dizziness or nausea. Do not use this exercise if you have photosensitive epilepsy. Have someone near you if you do it standing.',
-    confirmText: 'Optokinetic patterns can strongly provoke dizziness or nausea and may trigger seizures in people with photosensitive epilepsy.\n\nDo not continue if you have photosensitive epilepsy. Sit down with support before you start.\n\nContinue?',
+    caution: OKN_PHOTOSENSITIVITY,
+    confirm: () => OKN_CONFIRM,
+    settings: [
+      ...oknSettings(''),
+      { key: 'fixation', label: 'Show fixation dot', type: 'toggle', default: false },
+      S.duration(30, 10, 180),
+    ],
+    summarize: (s) => oknSummary(oknConfig(s, '')),
+    cue: (s) => (s.fixation ? 'Keep your eyes on the red dot' : 'Let your eyes follow the pattern'),
+    create(s) {
+      const bg = createOknBackground(oknConfig(s, ''));
+      return {
+        update() {},
+        draw(ctx, w, h, t) {
+          bg.draw(ctx, w, h, t);
+          if (s.fixation) drawFixation(ctx, w, h);
+        },
+      };
+    },
+  };
+
+  const saccadesOkn = {
+    id: 'saccades-okn',
+    tag: 'Visual motion',
+    title: 'Saccades + optokinetic',
+    short: 'Jump your eyes between targets while a pattern moves behind them.',
+    lede: 'This combines saccades with an optokinetic background. You keep your gaze on still targets while the background moves, as you must do in busy places such as shops, stations or traffic. It trains your brain to rely less on visual motion.',
+    steps: [
+      'Sit in a chair with back support, about an arm’s length from the screen. Keep your head still.',
+      'When the orange letter jumps, move your eyes to it quickly and read it. Do not let your eyes follow the moving background.',
+      'Start with a slow, low-contrast background and a long time between jumps.',
+      'Make it harder one step at a time: a faster background, high contrast, a shorter time between jumps, random targets, then standing if your clinician advises it.',
+    ],
+    tips: [
+      'Do Saccades and Optokinetic training separately first, until both are comfortable.',
+      'Try each background direction. If one direction is harder, it usually needs more practice.',
+      'Rest between sets until your symptoms settle.',
+    ],
+    caution: OKN_PHOTOSENSITIVITY,
+    confirm: () => OKN_CONFIRM,
+    settings: [
+      SACCADE_SETTINGS.pattern,
+      SACCADE_SETTINGS.interval(2),
+      SACCADE_SETTINGS.distance,
+      S.size,
+      ...oknSettings('bg', 'Background'),
+      S.duration(45, 10, 180),
+    ],
+    summarize: (s) => `${s.pattern} every ${s.interval}s · ${oknSummary(oknConfig(s, 'bg'))}`,
+    cue: () => 'Head still · jump eyes to the orange letter · ignore the background',
+    create(s, api) {
+      const bg = createOknBackground(oknConfig(s, 'bg'));
+      const task = createSaccadeTask(s, api, 'card');
+      return {
+        update: (t) => task.update(t),
+        draw(ctx, w, h, t) {
+          bg.draw(ctx, w, h, t);
+          task.draw(ctx, w, h);
+        },
+      };
+    },
+  };
+
+  // Each stage overrides part of an optokinetic config.
+  const CIRCUITS = {
+    horizontal: [
+      { pattern: 'stripes', direction: 'left' }, { pattern: 'stripes', direction: 'right' },
+      { pattern: 'dots', direction: 'left' }, { pattern: 'dots', direction: 'right' },
+    ],
+    directions: [
+      { pattern: 'stripes', direction: 'left' }, { pattern: 'stripes', direction: 'right' },
+      { pattern: 'stripes', direction: 'up' }, { pattern: 'stripes', direction: 'down' },
+      { pattern: 'stripes', direction: 'up-left' }, { pattern: 'stripes', direction: 'down-right' },
+      { pattern: 'stripes', direction: 'up-right' }, { pattern: 'stripes', direction: 'down-left' },
+    ],
+    mixed: [
+      { pattern: 'stripes', direction: 'left' }, { pattern: 'stripes', direction: 'right' },
+      { pattern: 'checker', direction: 'up' }, { pattern: 'checker', direction: 'down' },
+      { pattern: 'dots', direction: 'down-left' }, { pattern: 'dots', direction: 'up-right' },
+      { pattern: 'flow', flow: 'forward' }, { pattern: 'flow', flow: 'backward' },
+      { pattern: 'rotate', rotation: 'cw' }, { pattern: 'rotate', rotation: 'ccw' },
+    ],
+  };
+  const CIRCUIT_LABEL = { horizontal: 'left / right', directions: 'all directions', mixed: 'mixed patterns' };
+
+  function stageLabel(c) {
+    const dir = c.pattern === 'rotate' ? (c.rotation === 'cw' ? 'clockwise' : 'counter-clockwise')
+      : c.pattern === 'flow' ? c.flow : c.direction;
+    const name = OKN_PATTERN_LABEL[c.pattern];
+    return `${name[0].toUpperCase()}${name.slice(1)} · ${dir}`;
+  }
+
+  const oknCircuit = {
+    id: 'okn-circuit',
+    tag: 'Visual motion',
+    title: 'Optokinetic circuit',
+    short: 'Work through a sequence of moving patterns and directions, with rests in between.',
+    lede: 'A guided circuit of optokinetic patterns. Each stage shows one pattern and direction, and a short rest follows. The circuit covers several kinds of visual motion in one session, so you do not have to change settings between sets.',
+    steps: [
+      'Sit in a chair with back support. Use full screen and sit close enough that the pattern fills most of what you see.',
+      'During each stage, let your eyes follow the pattern naturally, or keep them on the red dot if the fixation dot is on.',
+      'During the rests, look away from the screen or close your eyes and let any symptoms settle.',
+      'If a stage causes more than mild symptoms, press Space to pause. Then stop, or rest longer before you continue.',
+    ],
+    tips: [
+      'Start with the left / right circuit at a slow speed and low contrast.',
+      'Use longer stages or the “mixed patterns” circuit only when the shorter circuits are comfortable.',
+      'Note in the log which stages caused the most symptoms. They usually need the most practice, and the information is useful to your clinician.',
+    ],
+    caution: OKN_PHOTOSENSITIVITY,
+    confirm: () => OKN_CONFIRM,
     settings: [
       {
-        key: 'pattern', label: 'Pattern', type: 'select', default: 'stripes',
-        options: [['stripes', 'Stripes'], ['dots', 'Dot field'], ['rotate', 'Rotating dots (roll)']],
+        key: 'circuit', label: 'Circuit', type: 'select', default: 'horizontal',
+        options: [
+          ['horizontal', 'Left / right (4 stages, gentlest)'],
+          ['directions', 'All directions (8 stages)'],
+          ['mixed', 'Mixed patterns, incl. optic flow and roll (10 stages)'],
+        ],
       },
-      {
-        key: 'direction', label: 'Direction', type: 'select', default: 'left',
-        options: [['left', 'Moving left ←'], ['right', 'Moving right →'], ['up', 'Moving up ↑'], ['down', 'Moving down ↓']],
-        showIf: (s) => s.pattern !== 'rotate',
-      },
-      {
-        key: 'rotation', label: 'Rotation', type: 'select', default: 'cw',
-        options: [['cw', 'Clockwise ↻'], ['ccw', 'Counter-clockwise ↺']],
-        showIf: (s) => s.pattern === 'rotate',
-      },
+      { key: 'stageTime', label: 'Time per stage', type: 'range', min: 10, max: 60, step: 5, unit: 's', default: 20 },
+      { key: 'rest', label: 'Rest between stages', type: 'range', min: 0, max: 30, step: 5, unit: 's', default: 10 },
       { key: 'speed', label: 'Speed', type: 'range', min: 1, max: 10, step: 1, unit: '', default: 3 },
       {
         key: 'width', label: 'Stripe / dot size', type: 'select', default: 'medium',
@@ -742,89 +1123,46 @@
         options: [['low', 'Low (gentler)'], ['high', 'High']],
       },
       { key: 'fixation', label: 'Show fixation dot', type: 'toggle', default: false },
-      S.duration(30, 10, 180),
     ],
-    summarize: (s) => `${s.pattern} · ${s.pattern === 'rotate' ? s.rotation : s.direction} · speed ${s.speed} · ${s.contrast} contrast`,
+    summarize: (s) => `${CIRCUIT_LABEL[s.circuit]} · ${CIRCUITS[s.circuit].length} × ${s.stageTime}s · speed ${s.speed} · ${s.contrast} contrast`,
     cue: (s) => (s.fixation ? 'Keep your eyes on the red dot' : 'Let your eyes follow the pattern'),
-    create(s) {
-      const dots = Array.from({ length: 180 }, () => ({
-        x: Math.random(),
-        y: Math.random(),
-        a: Math.random() * Math.PI * 2,
-        rr: Math.sqrt(Math.random()),
-        r: 0.6 + Math.random() * 0.8,
+    create(s, api) {
+      const stages = CIRCUITS[s.circuit].map((over) => ({
+        direction: 'left', rotation: 'cw', flow: 'forward', motion: 'constant', period: 6,
+        speed: s.speed, width: s.width, contrast: s.contrast, ...over,
       }));
-      const [c1, c2] = OKN_COLORS[s.contrast];
-
-      function drawStripes(ctx, w, h, t, m) {
-        const sw = m * OKN_WIDTH[s.width];
-        const period = sw * 2;
-        const v = m * s.speed * 0.06;
-        const sign = s.direction === 'left' || s.direction === 'up' ? -1 : 1;
-        const horiz = s.direction === 'left' || s.direction === 'right';
-        const off = (((t * v * sign) % period) + period) % period;
-        const len = horiz ? w : h;
-        ctx.fillStyle = c1;
-        ctx.fillRect(0, 0, w, h);
-        ctx.fillStyle = c2;
-        for (let p = off - period; p < len; p += period) {
-          if (horiz) ctx.fillRect(p, 0, sw, h); else ctx.fillRect(0, p, w, sw);
-        }
-      }
-
-      function drawDots(ctx, w, h, t, m) {
-        const v = m * s.speed * 0.06;
-        const sign = s.direction === 'left' || s.direction === 'up' ? -1 : 1;
-        const horiz = s.direction === 'left' || s.direction === 'right';
-        const base = m * OKN_WIDTH[s.width] * 0.3;
-        ctx.fillStyle = c1;
-        ctx.fillRect(0, 0, w, h);
-        ctx.fillStyle = c2;
-        const pad = base * 2;
-        for (const d of dots) {
-          let x = d.x * (w + pad * 2);
-          let y = d.y * (h + pad * 2);
-          if (horiz) x = (((x + t * v * sign) % (w + pad * 2)) + (w + pad * 2)) % (w + pad * 2);
-          else y = (((y + t * v * sign) % (h + pad * 2)) + (h + pad * 2)) % (h + pad * 2);
-          ctx.beginPath();
-          ctx.arc(x - pad, y - pad, base * d.r, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-
-      function drawRotate(ctx, w, h, t, m) {
-        const omega = s.speed * 0.06 * (s.rotation === 'ccw' ? -1 : 1);
-        const R = Math.hypot(w, h) / 2;
-        const base = m * OKN_WIDTH[s.width] * 0.45;
-        ctx.fillStyle = c1;
-        ctx.fillRect(0, 0, w, h);
-        ctx.fillStyle = c2;
-        for (const d of dots) {
-          const ang = d.a + omega * t;
-          const rad = d.rr * R;
-          ctx.beginPath();
-          ctx.arc(w / 2 + Math.cos(ang) * rad, h / 2 + Math.sin(ang) * rad, base * d.r * (0.25 + d.rr), 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
+      const backgrounds = stages.map(createOknBackground);
+      const block = s.stageTime + s.rest;
+      let state = { i: 0, within: 0, resting: false };
+      let lastKey = '';
 
       return {
-        update() {},
-        draw(ctx, w, h, t) {
-          const m = Math.min(w, h);
-          if (s.pattern === 'dots') drawDots(ctx, w, h, t, m);
-          else if (s.pattern === 'rotate') drawRotate(ctx, w, h, t, m);
-          else drawStripes(ctx, w, h, t, m);
-          if (s.fixation) {
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(w / 2, h / 2, 11, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#dc2626';
-            ctx.beginPath();
-            ctx.arc(w / 2, h / 2, 8, 0, Math.PI * 2);
-            ctx.fill();
+        update(t) {
+          const i = Math.floor(t / block);
+          const within = t - i * block;
+          if (i >= stages.length || (i === stages.length - 1 && within >= s.stageTime)) {
+            api.finish();
+            return;
           }
+          state = { i, within, resting: within >= s.stageTime };
+          const key = `${i}${state.resting}`;
+          if (key !== lastKey) {
+            lastKey = key;
+            api.beep(state.resting ? 520 : 880, 0.1);
+            api.setStat(`Stage ${i + 1} of ${stages.length} · ${state.resting ? 'rest' : stageLabel(stages[i])}`);
+          }
+        },
+        draw(ctx, w, h) {
+          const m = Math.min(w, h);
+          if (state.resting) {
+            drawBackground(ctx, w, h, 'plain');
+            drawLabel(ctx, 'Rest', w / 2, h / 2 - m * 0.08, Math.max(32, m * 0.08), COLORS.guide);
+            drawLabel(ctx, `Look away or close your eyes · ${Math.ceil(block - state.within)} s`, w / 2, h / 2 + m * 0.02, Math.max(16, m * 0.03), COLORS.ink);
+            drawLabel(ctx, `Next: ${stageLabel(stages[state.i + 1])}`, w / 2, h / 2 + m * 0.09, Math.max(14, m * 0.026), 'rgba(28, 40, 48, 0.6)');
+            return;
+          }
+          backgrounds[state.i].draw(ctx, w, h, state.within);
+          if (s.fixation) drawFixation(ctx, w, h);
         },
       };
     },
@@ -839,9 +1177,11 @@
     pursuit: '<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 20c5-10 10-10 15 0s10 10 15 0"/><circle cx="20" cy="20" r="3.5" fill="currentColor"/></svg>',
     convergence: '<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="9" cy="30" r="3"/><circle cx="31" cy="30" r="3"/><path d="M10.5 27.5 20 9l9.5 18.5"/><circle cx="20" cy="9" r="2.5" fill="currentColor"/></svg>',
     okn: '<svg viewBox="0 0 40 40" fill="currentColor"><rect x="5" y="7" width="5" height="26" rx="1.5"/><rect x="15" y="7" width="5" height="26" rx="1.5" opacity=".7"/><rect x="25" y="7" width="5" height="26" rx="1.5" opacity=".45"/><path d="M33 20l4-3v6z"/></svg>',
+    'saccades-okn': '<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M7 6v28M15 6v28M23 6v28M31 6v28" opacity=".3"/><circle cx="10" cy="20" r="4.5" fill="currentColor" stroke="none"/><circle cx="30" cy="20" r="4.5" fill="#fff"/></svg>',
+    'okn-circuit': '<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M31 13a13 13 0 1 0 2 9"/><path d="M33 6v8h-8"/><path d="M15 14v12M20 14v12M25 14v12" opacity=".55"/></svg>',
   };
 
-  const exercises = [vor1, vor2, saccades, pursuit, convergence, okn];
+  const exercises = [vor1, vor2, saccades, pursuit, convergence, okn, saccadesOkn, oknCircuit];
   exercises.forEach((e) => { e.icon = ICONS[e.id]; });
 
   window.VRT = { exercises };

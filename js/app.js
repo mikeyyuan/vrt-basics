@@ -213,9 +213,11 @@
     });
 
     document.getElementById('startBtn').addEventListener('click', () => {
-      if (ex.confirmText && !sessionStorage.getItem(`vrt.confirmed.${ex.id}`)) {
-        if (!window.confirm(ex.confirmText)) return;
-        sessionStorage.setItem(`vrt.confirmed.${ex.id}`, '1');
+      // A warning (e.g. photosensitivity) is confirmed once per browser session.
+      const warning = ex.confirm ? ex.confirm(values) : '';
+      if (warning && sessionStorage.getItem('vrt.confirmed') !== warning) {
+        if (!window.confirm(warning)) return;
+        sessionStorage.setItem('vrt.confirmed', warning);
       }
       startSession(ex, { ...values }, {
         before: Number(before.value),

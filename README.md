@@ -4,12 +4,14 @@ A browser app for guided practice of basic vestibular rehabilitation therapy (VR
 
 | Exercise | What it trains | Main settings |
 |---|---|---|
-| VOR ×1 | Gaze stabilization: still target, moving head | Axis, tempo (bpm), duration, target, size, busy background, pacing guide |
+| VOR ×1 | Gaze stabilization: still target, moving head | Axis, tempo (bpm), duration, target, size, background (plain, busy or moving optokinetic pattern), pacing guide |
 | VOR ×2 | Gaze stabilization: target and head move in opposite directions | The same as VOR ×1, plus travel distance |
 | Saccades | Fast, accurate eye jumps | Pattern (H/V/diagonal/random), interval, distance, eyes-only or eyes-then-head |
-| Smooth pursuit | Steady eye tracking; VOR cancellation | Path (line/circle/figure-8/random), speed (Hz), size, mode |
+| Smooth pursuit | Steady eye tracking; VOR cancellation | Path (line/circle/figure-8/random), speed (Hz), size, mode, background (plain, busy or moving optokinetic pattern) |
 | Convergence | Near focus and eye teaming | Pencil push-ups (in/hold/out timing) or near–far jumps, reps, voice cues |
-| Optokinetic | Habituation to visual motion | Stripes, dot field or rotation; direction, speed, size, contrast, fixation dot |
+| Optokinetic | Habituation to visual motion | Stripes, checkerboard, dot field, roll rotation or optic flow; 8 directions; steady, reversing or back-and-forth motion; speed, size, contrast, fixation dot |
+| Saccades + optokinetic | Saccades with a moving background | Saccade pattern, interval and distance, plus all optokinetic background settings |
+| Optokinetic circuit | A guided sequence of optokinetic patterns with rests | Circuit (left/right, all directions, mixed patterns), time per stage, rest, speed, size, contrast, fixation dot |
 
 Other features: a 3-second countdown, audio beeps and optional spoken cues, full screen with a screen wake lock, pause with <kbd>Space</kbd> and stop with <kbd>Esc</kbd>, and automatic pause when the tab is hidden. Each exercise keeps its own settings. A symptom log records ratings before and after each session (0–10) and your notes, and you can export it as CSV.
 
