@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Guided vestibular rehabilitation (VRT) basics: VOR x1 and x2 gaze stabilization, saccades, smooth pursuit, convergence and optokinetic training.">
+  <title>VRT Basics — Vestibular Rehabilitation Exercises</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230f766e'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="#/" class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="currentColor"/><circle cx="16" cy="16" r="5" fill="#fff"/></svg>
+      <span>VRT Basics</span>
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a href="#/" data-nav="home">Exercises</a>
+      <a href="#/log" data-nav="log">Log</a>
+      <a href="#/about" data-nav="about">Safety &amp; about</a>
+      <a href="#/feedback" data-nav="feedback">Feedback</a>
+    </nav>
+    <button id="soundToggle" class="icon-btn" type="button" aria-pressed="true" title="Toggle sound cues">
+      <span class="sound-on">🔊</span><span class="sound-off">🔇</span>
+    </button>
+  </header>
+
+  <main id="view" class="container"></main>
+
+  <footer class="footer container">
+    <p>For education and practice only. This app does not diagnose or treat any condition. Use it as directed by your physical therapist, audiologist, or physician. <a href="#/feedback">Send feedback</a>.</p>
+  </footer>
+
+  <!-- Full-screen exercise stage -->
+  <div id="stage" hidden>
+    <canvas id="canvas" aria-label="Exercise display"></canvas>
+    <div class="hud" id="hud">
+      <div class="hud-left">
+        <div class="hud-title" id="hudTitle"></div>
+        <div class="hud-stat" id="hudStat"></div>
+      </div>
+      <div class="hud-cue" id="hudCue" hidden></div>
+      <div class="hud-right">
+        <span class="hud-time" id="hudTime">0:00</span>
+        <button id="pauseBtn" class="btn hud-btn" type="button">Pause</button>
+        <button id="stopBtn" class="btn hud-btn stop" type="button">Stop</button>
+      </div>
+    </div>
+    <div class="countdown" id="countdown" hidden></div>
+    <div class="paused" id="pausedOverlay" hidden>Paused<small>Press Space or Resume to continue</small></div>
+  </div>
+
+  <!-- End-of-session dialog -->
+  <dialog id="endDialog">
+    <form method="dialog" class="dialog-body">
+      <h2 id="endTitle">Session complete</h2>
+      <p id="endSummary" class="muted"></p>
+      <div class="field">
+        <label for="afterRange">How are your symptoms now? <span class="muted">(0 = none, 10 = worst)</span></label>
+        <div class="range-row">
+          <input type="range" id="afterRange" min="0" max="10" step="1" value="0">
+          <output id="afterOut">0</output>
+        </div>
+      </div>
+      <div class="field">
+        <label for="endNotes">Notes <span class="muted">(optional)</span></label>
+        <textarea id="endNotes" rows="2" placeholder="e.g. standing, feet together; mild dizziness, settled after 5 min"></textarea>
+      </div>
+      <p id="endAdvice" class="callout" hidden></p>
+      <div class="dialog-actions">
+        <button value="discard" class="btn">Don't save</button>
+        <button value="save" class="btn primary">Save to log</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="js/exercises.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

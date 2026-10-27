@@ -1,0 +1,30 @@
+name: Report a problem
+description: Something does not work or does not display correctly.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This page is public.** Do not include personal health information.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: exercise
+    attributes:
+      label: Which exercise or page?
+  - type: input
+    id: device
+    attributes:
+      label: Device and browser
+      placeholder: e.g. iPhone 15, Safari; Windows laptop, Chrome
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it happen again (optional)

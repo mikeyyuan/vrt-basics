@@ -1,0 +1,41 @@
+name: Feedback or idea
+description: Tell us what helped, what was confusing, or what you would like added.
+labels: [feedback]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for your feedback. **This page is public.** Do not include personal health information.
+  - type: dropdown
+    id: role
+    attributes:
+      label: I am a…
+      options:
+        - Person doing the exercises
+        - Clinician (PT, OT, audiologist, physician)
+        - Caregiver or family member
+        - Other
+  - type: dropdown
+    id: exercise
+    attributes:
+      label: Which part of the app?
+      options:
+        - VOR ×1
+        - VOR ×2
+        - Saccades
+        - Smooth pursuit
+        - Convergence
+        - Optokinetic training
+        - Log
+        - General / whole app
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Your feedback
+      description: What worked well, what was confusing, or what you would change.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Ideas for new features or exercises (optional)
